@@ -22,16 +22,17 @@ func main() {
 		Err_handler: func(err error) {
 			fmt.Printf("ERROR! %v\n", err)
 		},
-		Start_handler: func(state_name string) {
-			fmt.Printf("Starting state %s\n", state_name)
+		Start_handler: func(s *ssm.StartArg) {
+			fmt.Printf("Starting state %s at thread %d\n", s.StateName(), s.ThreadID())
 		},
+		Threads: 2,
 	}
 	var (
 		res []int
 		err error
 	)
 
-	machine := ssm.CreateMachine(ctx).
+	machine := ssm.CreateMachine().
 		AddState(func(c *ssm.Caller) error {
 			res, err = a()
 			if err != nil {
@@ -42,7 +43,7 @@ func main() {
 		AddState(func(c *ssm.Caller) error {
 			needsContinue := b(res)
 			if needsContinue {
-				println("continue")
+				println("threadID: ", c.ThreadID(), ", continue")
 				c.Continue()
 				return nil
 			}
@@ -52,13 +53,13 @@ func main() {
 			r := rand.Intn(10)
 			if r > 5 {
 				c.ChangeState(stateWrite)
-				println("changing state event")
+				println("threadID: ", c.ThreadID(), ", changing state event")
 				return nil
 			}
 			return nil
 		}, "last_state").ApplyCfg(&cfg).Build()
 
-	machine.Run()
+	machine.Run(ctx)
 }
 
 // for future tests
