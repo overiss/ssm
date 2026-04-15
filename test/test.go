@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"time"
 
-	ssm "github.com/mxmrykov/smart-state-machine"
+	"github.com/overiss/ssm"
 )
 
 const (
