@@ -4,7 +4,7 @@ A wrapper for the state machine that allows you to scale all necessary activitie
 
 ## Usage example
 
-```
+```go
 ctx := context.Background()
 cfg := ssm.Config{
 	Loop_tm: time.Second,
