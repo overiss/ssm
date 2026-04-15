@@ -27,7 +27,7 @@ machine := ssm.CreateMachine(ctx).
 			return err
 		}
 		return nil
-	}).
+	}, ssm.StateRead).
 	AddState(func(c *ssm.Caller) error {
 		needsContinue := b(res)
 		if needsContinue {
@@ -37,7 +37,7 @@ machine := ssm.CreateMachine(ctx).
 		}
 		fmt.Println("aft")
 		return nil
-	}).
+	}, "async-state").
 	AddState(func(c *ssm.Caller) error {
 		r := rand.Intn(10)
 		if r > 5 {

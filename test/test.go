@@ -33,7 +33,7 @@ func main() {
 				return err
 			}
 			return nil
-		}).
+		}, ssm.StateRead).
 		AddState(func(c *ssm.Caller) error {
 			needsContinue := b(res)
 			if needsContinue {
@@ -43,15 +43,14 @@ func main() {
 			}
 			fmt.Println("aft")
 			return nil
-		}).
+		}, "async-state").
 		AddState(func(c *ssm.Caller) error {
 			r := rand.Intn(10)
 			if r > 5 {
 				return errors.New("some moreover error")
 			}
 			return nil
-		}).
-		ApplyCfg(&cfg).Build()
+		}).ApplyCfg(&cfg).Build()
 
 	machine.Run()
 }

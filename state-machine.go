@@ -14,10 +14,11 @@ func CreateMachine(ctx context.Context) *boiler_plate {
 // ApplyCfg - applies configurations to the state machine
 func (b *boiler_plate) ApplyCfg(cfg *Config) *boiler_plate {b.cfg = cfg;return b}
 
-// AddState - adds an executable state to the machine
+// AddState - adds an executable state to the machine. You can specify a custom
+// state name as the second argument, otherwise it will be determined by default.
 func (b *boiler_plate) AddState(s State, custom_name ...string) *boiler_plate {
 	b.states = append(b.states, s)
-	name := fmt.Sprintf("state-%d", len(b.states))
+	name := fmt.Sprintf(stateNameMask, len(b.states))
 	if len(custom_name) > 0 {name = custom_name[0]}
 	b.names = append(b.names, name)
 	return b
@@ -56,9 +57,7 @@ func (m *Machine) exec() {
 
 func (m *Machine) loop_sleep_sync() {
 	last_loop := m.bp.last_state+1 == len(m.bp.states)
-	if loop_to := m.bp.cfg.Loop_tm; loop_to == 0 && last_loop {
-		time.Sleep(loop_to)
-	}
+	if loop_to := m.bp.cfg.Loop_tm; loop_to == 0 && last_loop {time.Sleep(loop_to)}
 }
 
 func (m *Machine) next_step() {
