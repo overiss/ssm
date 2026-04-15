@@ -27,24 +27,25 @@ machine := ssm.CreateMachine(ctx).
 			return err
 		}
 		return nil
-	}, ssm.StateRead).
+	}, stateRead).
 	AddState(func(c *ssm.Caller) error {
 		needsContinue := b(res)
 		if needsContinue {
-			fmt.Println("continue")
+			println("continue")
 			c.Continue()
 			return nil
 		}
-		fmt.Println("aft")
 		return nil
-	}, "async-state").
+	}, stateWrite).
 	AddState(func(c *ssm.Caller) error {
 		r := rand.Intn(10)
 		if r > 5 {
-			return errors.New("some moreover error")
+			c.ChangeState(stateWrite)
+			println("changing state event")
+			return nil
 		}
 		return nil
-	}).ApplyCfg(&cfg).Build()
+	}, "last_state").ApplyCfg(&cfg).Build()
 
 machine.Run()
 ```
