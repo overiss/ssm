@@ -6,9 +6,12 @@ import (
 )
 
 type (
-	Machine struct {bp *boiler_plate}
+	Machine struct{ bp *boiler_plate }
 
-	Caller struct {continue_sig chan struct{}}
+	Caller struct {
+		continue_sig chan struct{}
+		change_sig   chan string
+	}
 
 	State func(c *Caller) error
 
@@ -21,6 +24,7 @@ type (
 	boiler_plate struct {
 		states     []State
 		names      []string
+		state_map  map[string]int
 		ctx        context.Context
 		cfg        *Config
 		last_state int
