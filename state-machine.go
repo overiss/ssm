@@ -2,79 +2,66 @@ package ssm
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
-func CreateMachine() *boiler_plate {
-	return &boiler_plate{states: make([]State, 0)}
+// CreateMachine - creates a set of methods for configuring the state machine
+func CreateMachine(ctx context.Context) *boiler_plate {
+	return &boiler_plate{states: make([]State, 0), cfg: new(Config), ctx: ctx}
 }
 
-func (b *boiler_plate) WithLoopTimeout(to time.Duration) *boiler_plate {
-	b.loop_tm = &to
+// ApplyCfg - applies configurations to the state machine
+func (b *boiler_plate) ApplyCfg(cfg *Config) *boiler_plate {b.cfg = cfg;return b}
+
+// AddState - adds an executable state to the machine
+func (b *boiler_plate) AddState(s State, custom_name ...string) *boiler_plate {
+	b.states = append(b.states, s)
+	name := fmt.Sprintf("state-%d", len(b.states))
+	if len(custom_name) > 0 {name = custom_name[0]}
+	b.names = append(b.names, name)
 	return b
 }
 
-func (b *boiler_plate) WithErrorHandler(fn func(err error)) *boiler_plate {
-	b.err_handler = fn
-	return b
-}
-
-func (b *boiler_plate) AddState(action State) *boiler_plate {
-	b.states = append(b.states, action)
-	return b
-}
-
-func (b *boiler_plate) UseContext(ctx context.Context) *contextable_bp {
-	b.ctx = &contextable{ctx: ctx}
-	return &contextable_bp{b}
-}
-
-func (c *contextable_bp) Build() *Machine {
-	return &Machine{cbp: c}
-}
+// Build - assembles the configured machine into an executable method
+func (b *boiler_plate) Build() *Machine {return &Machine{bp: b}}
 
 func (m *Machine) Run() {
 	for {
 		select {
-		case <-m.cbp.ctx.ctx.Done():return
+		case <-m.bp.ctx.Done():return
 		default:m.exec()
 		}
 	}
 }
 
+// Continue - returns to the current state after exiting
 func (c *Caller) Continue() {c.continue_sig <- struct{}{}}
 
 func new_caller() *Caller {return &Caller{continue_sig: make(chan struct{}, 1)}}
 
 func (m *Machine) exec() {
-	m.sleep_sync()
-	crucial, clr, exec_chan := m.cbp.states[m.cbp.last_state], new_caller(), make(chan error, 1)
+	m.loop_sleep_sync()
+	if _sh := m.bp.cfg.Start_handler; _sh != nil {_sh(m.bp.names[m.bp.last_state])}
+	crucial, clr, exec_chan := m.bp.states[m.bp.last_state], new_caller(), make(chan error, 1)
 	go func() { defer close(exec_chan); exec_chan <- crucial(clr) }()
 
 	select {
-	case e := <-exec_chan:	if _h := m.cbp.err_handler; e != nil && _h != nil {_h(e); return}
+	case e := <-exec_chan:	if _eh := m.bp.cfg.Err_handler; e != nil && _eh != nil {_eh(e); return}
 	case <-clr.continue_sig:return
 	}
 
 	m.next_step()
 }
 
-func (m *Machine) sleep_sync() {
-	last_loop := m.cbp.last_state+1 == len(m.cbp.states)
-	if loop_to := m.cbp.loop_tm; loop_to != nil && last_loop {
-		time.Sleep(*loop_to)
+func (m *Machine) loop_sleep_sync() {
+	last_loop := m.bp.last_state+1 == len(m.bp.states)
+	if loop_to := m.bp.cfg.Loop_tm; loop_to == 0 && last_loop {
+		time.Sleep(loop_to)
 	}
 }
 
 func (m *Machine) next_step() {
-	if m.cbp.last_state+1 == len(m.cbp.states) {m.cbp.last_state = 0;return}
-	m.cbp.last_state += 1
-}
-
-func (d *data_lake[T]) get() T {
-	return d.lake.Get().(T)
-}
-
-func (d *data_lake[T]) put(x T) {
-	d.lake.Put(x)
+	if m.bp.last_state+1 == len(m.bp.states) {m.bp.last_state = 0;return}
+	m.bp.last_state += 1
 }

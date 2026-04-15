@@ -12,40 +12,46 @@ import (
 
 func main() {
 	ctx := context.Background()
+	cfg := ssm.Config{
+		Loop_tm: time.Second,
+		Err_handler: func(err error) {
+			fmt.Printf("ERROR! %v\n", err)
+		},
+		Start_handler: func(state_name string) {
+			fmt.Printf("Starting state %s\n", state_name)
+		},
+	}
+	var (
+		res []int
+		err error
+	)
 
-	machine := ssm.CreateMachine().
+	machine := ssm.CreateMachine(ctx).
 		AddState(func(c *ssm.Caller) error {
-			fmt.Println("starting state 1")
-			r := rand.Intn(10)
-			if r > 5 {
-				return errors.New("some error")
+			res, err = a()
+			if err != nil {
+				return err
 			}
-			fmt.Println("ending state 1")
 			return nil
 		}).
 		AddState(func(c *ssm.Caller) error {
-			fmt.Println("starting state 2")
-			r := rand.Intn(10)
-			if r > 5 {
-				return errors.New("some another error")
+			needsContinue := b(res)
+			if needsContinue {
+				fmt.Println("continue")
+				c.Continue()
+				return nil
 			}
-			fmt.Println("ending state 2")
+			fmt.Println("aft")
 			return nil
 		}).
 		AddState(func(c *ssm.Caller) error {
-			fmt.Println("starting state 3")
 			r := rand.Intn(10)
 			if r > 5 {
 				return errors.New("some moreover error")
 			}
-			fmt.Println("ending state 3")
 			return nil
 		}).
-		WithLoopTimeout(time.Second).
-		WithErrorHandler(func(err error) {
-			fmt.Printf("ERROR! %v\n", err)
-		}).
-		UseContext(ctx).Build()
+		ApplyCfg(&cfg).Build()
 
 	machine.Run()
 }
@@ -64,7 +70,7 @@ func a() ([]int, error) {
 	return slice, nil
 }
 
-func b(a []int) {
-	time.Sleep(time.Second)
+func b(a []int) bool {
 	fmt.Println(a)
+	return rand.Intn(2) % 2 == 0
 }
