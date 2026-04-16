@@ -12,25 +12,43 @@ func CreateMachine() *boiler_plate {
 }
 
 // ApplyCfg - applies configurations to the state machine
-func (b *boiler_plate) ApplyCfg(cfg *Config) *boiler_plate {b.cfg = cfg; return b }
+func (b *boiler_plate) ApplyCfg(cfg *Config) *boiler_plate { b.cfg = cfg; return b }
 
 // AddState - adds an executable state to the machine. You can specify a custom
 // state name as the second argument, otherwise it will be determined by default.
 func (b *boiler_plate) AddState(s State, state_name string) *boiler_plate {
-	b.states, b.names = append(b.states, s), append(b.names, state_name); b.state_map[state_name] = len(b.states) - 1
+	b.states, b.names = append(b.states, s), append(b.names, state_name)
+	b.state_map[state_name] = len(b.states) - 1
 	return b
 }
 
 // Build - assembles the configured machine into an executable method
 func (b *boiler_plate) Build() *Machine {
-	rc := 1; real_c := b.cfg.Threads; if real_c > 1 {rc = real_c}; new_wg := new(sync.WaitGroup)
-	new_wg.Add(rc); m := &Machine{bps: b.init_replicated_plates(rc), replication: &replication{wg: new_wg},}; return m
+	rc := 1
+	real_c := b.cfg.Threads
+	if real_c > 1 {
+		rc = real_c
+	}
+	new_wg := new(sync.WaitGroup)
+	m := &Machine{bps: b.init_replicated_plates(rc), replication: &replication{wg: new_wg, replicas: rc}}
+	return m
 }
 
 func (m *Machine) Run(ctx context.Context) {
-	fn := func(gid int) {for {select {case <-ctx.Done(): return; default: m.bps[gid].exec(gid)}}}
-	target_r_num := m.replication.replicas; if target_r_num < 2 {target_r_num = 2}
-	rplc := m.replication; for ix := range target_r_num{;rplc.wg.Go(func() {fn(ix); m.replication.wg.Done()})}
+	fn := func(gid int) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				m.bps[gid].exec(gid)
+			}
+		}
+	}
+	rplc := m.replication
+	for ix := range m.replication.replicas {
+		rplc.wg.Go(func() { fn(ix) })
+	}
 	m.replication.wg.Wait()
 }
 
@@ -53,36 +71,76 @@ func new_caller(goroutine_id int) *Caller {
 }
 
 func (b *boiler_plate) exec(gid int) {
-	b.loop_sleep_sync(); b.start_h_init(gid)
-	crucial, clr, exec_chan := b.states[b.last_state], new_caller(gid), make(chan error, 1)
-	go func() { defer close(exec_chan); exec_chan <- crucial(clr) }()
+	b.loop_sleep_sync()
+	b.start_h_init(gid)
+
+	clr := new_caller(gid)
+	err := b.states[b.last_state](clr)
+
+	if err != nil {
+		if eh := b.cfg.Err_handler; eh != nil {
+			eh(err)
+		}
+		return
+	}
+
 	select {
-	case e := <-exec_chan: if _eh := b.cfg.Err_handler; e != nil && _eh != nil {_eh(e);return}
-	case <-clr.continue_sig: return
+	case <-clr.continue_sig:
+		return
 	case t := <-clr.change_sig:
-		i, ok := b.state_map[t]; if !ok {println("[SSM] state not found: ", t)}; b.last_state = i; return
-	}; b.next_step()
+		if i, ok := b.state_map[t]; ok {
+			b.last_state = i
+		} else {
+			println("[SSM] state not found:", t)
+		}
+		return
+	default:
+		b.next_step()
+	}
 }
 
 func (b *boiler_plate) start_h_init(gid int) {
 	start_h_arg := &StartArg{state_name: b.names[b.last_state], thread_id: gid}
-	if _sh := b.cfg.Start_handler; _sh != nil {_sh(start_h_arg)}
+	if _sh := b.cfg.Start_handler; _sh != nil {
+		_sh(start_h_arg)
+	}
 }
 
 func (b *boiler_plate) loop_sleep_sync() {
 	last_loop := b.last_state+1 == len(b.states)
-	if loop_to := b.cfg.Loop_tm; loop_to == 0 && last_loop {time.Sleep(loop_to)}
+	if loop_to := b.cfg.Loop_tm; loop_to == 0 && last_loop {
+		time.Sleep(loop_to)
+	}
 }
 
 func (b *boiler_plate) next_step() {
-	if b.last_state+1 == len(b.states) {b.last_state = 0; return}
+	if b.last_state+1 == len(b.states) {
+		b.last_state = 0
+		return
+	}
 	b.last_state += 1
 }
 
 func (b *boiler_plate) init_replicated_plates(num int) []*boiler_plate {
-	all := make([]*boiler_plate, 0, num); for range num {all = append(all, b)}
+	all := make([]*boiler_plate, 0, num)
+	for range num {
+		_copy := *b
+		_copy.states = append([]State(nil), b.states...)
+		_copy.names = append([]string(nil), b.names...)
+		if b.cfg != nil {
+			cfgCopy := *b.cfg
+			_copy.cfg = &cfgCopy
+		} else {
+			_copy.cfg = new(Config)
+		}
+		_copy.state_map = make(map[string]int)
+		for k, v := range b.state_map {
+			_copy.state_map[k] = v
+		}
+		all = append(all, &_copy)
+	}
 	return all
 }
 
-func (s *StartArg) StateName() string {return s.state_name}
-func (s *StartArg) ThreadID() int {return s.thread_id}
+func (s *StartArg) StateName() string { return s.state_name }
+func (s *StartArg) ThreadID() int     { return s.thread_id }
